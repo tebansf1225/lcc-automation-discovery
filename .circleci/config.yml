@@ -1,3 +1,778 @@
+# This code is licensed from CircleCI to the user under the MIT license. See
+# https://circleci.com/orbs/registry/licensing for details.
+commands:
+  install-browser-tools:
+    description: |
+      Install various browsers and browser-testing tools into any Debian/Ubuntu-based Docker image. Intended to ease browser testing on CircleCI. Requirements: bash, curl, apt-get, gpg, sha256sum, sed, tar, unzip, grep
+    parameters:
+      chromedriver-install-dir:
+        default: /usr/local/bin
+        description: |
+          Directory in which to install Chromedriver
+        type: string
+      debug:
+        default: false
+        description: |
+          Extra output for orb developers
+        type: boolean
+      firefox-alpine-version:
+        default: stable
+        description: |
+          For Alpine Linux users, select a Firefox version: either the latest stable release, or the latest Extended Support Release. For more information, see https://mozilla.org/firefox/organizations and https://pkgs.alpinelinux.org/packages?name=firefox*
+        enum:
+        - stable
+        - esr
+        type: enum
+      firefox-install-dir:
+        default: /usr/local/bin
+        description: |
+          Directory in which to install Firefox
+        type: string
+      firefox-version:
+        default: latest
+        description: |
+          Version of Firefox to install, defaults to the latest stable release. To install an older release, specify a full semantic version number, e.g., 66.0.3, 53.0, etc. Note: version-selection is not supported for Alpine Linux-based execution environments, as Mozilla's Firefox binaries are not compiled to run on Alpine. Use the `alpine-version` parameter to select from a limited number of Alpine-based Firefox packages. Otherwise, for a full list of releases, see the following: https://archive.mozilla.org/pub/firefox/releases/
+        type: string
+      geckodriver-install-dir:
+        default: /usr/local/bin
+        description: |
+          Directory in which to install Geckodriver
+        type: string
+      geckodriver-version:
+        default: latest
+        description: |
+          Version of Geckodriver to install, defaults to latest release. To install an older release, specify a full semantic version tag, e.g., `v0.23.0`. For a list of releases, and a Firefox/Geckodriver version compatibility table, see the following links: https://github.com/mozilla/geckodriver/releases https://firefox-source-docs.mozilla.org/testing/geckodriver/Support.html
+        type: string
+      install-chrome:
+        default: true
+        description: |
+          Install Google Chrome? Note: only the latest stable release can be installed, as Google does not maintain a public archive of previous releases.
+        type: boolean
+      install-chromedriver:
+        default: true
+        description: |
+          Install Chromedriver? Note: requires Google Chrome. A Chromedriver version will be dynamically selected based on the installed version of Chrome; for details, see the following information: https://sites.google.com/a/chromium.org/chromedriver/downloads/version-selection
+        type: boolean
+      install-firefox:
+        default: true
+        description: Install Firefox?
+        type: boolean
+      install-geckodriver:
+        default: true
+        description: Install Geckodriver?
+        type: boolean
+      replace-existing-chrome:
+        default: false
+        description: |
+          If there is an existing installation of Google Chrome, replace it with the latest stable release
+        type: boolean
+    steps:
+    - when:
+        condition: <<parameters.install-firefox>>
+        steps:
+        - install-firefox:
+            alpine-version: <<parameters.firefox-alpine-version>>
+            debug: <<parameters.debug>>
+            install-dir: <<parameters.firefox-install-dir>>
+            version: <<parameters.firefox-version>>
+    - when:
+        condition: <<parameters.install-geckodriver>>
+        steps:
+        - install-geckodriver:
+            debug: <<parameters.debug>>
+            install-dir: <<parameters.geckodriver-install-dir>>
+            version: <<parameters.geckodriver-version>>
+    - when:
+        condition: <<parameters.install-chrome>>
+        steps:
+        - install-chrome:
+            debug: <<parameters.debug>>
+            replace-existing: <<parameters.replace-existing-chrome>>
+    - when:
+        condition: <<parameters.install-chromedriver>>
+        steps:
+        - install-chromedriver:
+            debug: <<parameters.debug>>
+            install-dir: <<parameters.chromedriver-install-dir>>
+  install-chrome:
+    description: |
+      Install Google's Chrome browser, for use in browser testing. Note: only the latest stable release can be installed, as Google does not maintain a public archive of previous releases. Supports Debian/Ubuntu Linux, Alpine Linux (via Chromium), and macOS environments.
+    parameters:
+      debug:
+        default: false
+        description: |
+          Extra output for orb developers
+        type: boolean
+      replace-existing:
+        default: false
+        description: |
+          If there is an existing installation of Google Chrome, replace it with the latest stable release?
+        type: boolean
+    steps:
+    - run:
+        command: |
+          if [[ $EUID == 0 ]]; then export SUDO=""; else export SUDO="sudo"; fi
+
+          # installation check
+          if uname -a | grep Darwin<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            if ls /Applications | grep "Google Chrome"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+
+              <<#parameters.replace-existing>>echo "$(/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version)is currently installed; replacing it"
+
+              HOMEBREW_NO_AUTO_UPDATE=1 brew cask uninstall google-chrome<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> || true
+
+              $SUDO rm -rf /Applications/Google\ Chrome.app<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> || true<</parameters.replace-existing>><<^parameters.replace-existing>>echo "$(/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version)is already installed"
+
+              exit 0<</parameters.replace-existing>>
+            else
+              echo "Google Chrome is not currently installed; installing it"
+            fi
+          elif cat /etc/issue | grep Alpine<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            if command -v chromium-browser<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+
+              <<#parameters.replace-existing>>echo "$(chromium-browser --version)is currently installed; replacing it"
+
+              $SUDO apk del --force-broken-world chromium<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> || true
+              $SUDO rm -f "$(command -v chromium-browser)"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> || true<</parameters.replace-existing>><<^parameters.replace-existing>>echo "$(chromium-browser --version)is already installed to $(which chromium-browser)"
+
+              exit 0<</parameters.replace-existing>>
+
+            else
+              echo "Google Chrome (via Chromium) is not currently installed; installing it"
+            fi
+          elif command -v yum<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            if command -v google-chrome<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              <<#parameters.replace-existing>>echo "$(google-chrome --version)is currently installed; replacing it"
+
+              $SUDO yum remove -y google-chrome-stable<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> || true
+
+              $SUDO rm -f "$(command -v google-chrome)"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> || true<</parameters.replace-existing>><<^parameters.replace-existing>>echo "$(google-chrome --version)is already installed to $(which google-chrome)"
+
+              exit 0<</parameters.replace-existing>>
+            else
+              echo "Google Chrome is not currently installed; installing it"
+            fi
+          else
+            if command -v google-chrome<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+
+              <<#parameters.replace-existing>>echo "$(google-chrome --version)is currently installed; replacing it"
+
+              $SUDO apt-get -y --purge remove google-chrome-stable<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> || true
+
+              $SUDO rm -f "$(command -v google-chrome)"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> || true<</parameters.replace-existing>><<^parameters.replace-existing>>echo "$(google-chrome --version)is already installed to $(which google-chrome)"
+
+              exit 0<</parameters.replace-existing>>
+            else
+              echo "Google Chrome is not currently installed; installing it"
+            fi
+          fi
+
+          # install chrome
+          if uname -a | grep Darwin<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            brew update<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> && \
+              HOMEBREW_NO_AUTO_UPDATE=1 brew cask install google-chrome<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+
+            echo -e "#\!/bin/bash\n" > google-chrome
+            perl -i -pe "s|#\\\|#|g" google-chrome
+            echo -e "/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \"\$@\"" >> google-chrome
+
+            $SUDO mv google-chrome /usr/local/bin
+            $SUDO chmod +x /usr/local/bin/google-chrome
+
+            # test/verify installation
+            if google-chrome --version<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              echo "$(google-chrome --version)has been installed in the /Applications directory"
+              echo "A shortcut has also been created at $(which google-chrome)"
+              exit 0
+            else
+              echo "Something went wrong; Google Chrome could not be installed"
+              exit 1
+            fi
+          elif cat /etc/issue | grep Alpine<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            # https://github.com/Zenika/alpine-chrome/blob/master/Dockerfile
+
+            echo @edge http://nl.alpinelinux.org/alpine/edge/community >> /etc/apk/repositories
+            echo @edge http://nl.alpinelinux.org/alpine/edge/main >> /etc/apk/repositories
+
+            apk add --no-cache \
+              chromium@edge \
+              harfbuzz@edge \
+              nss@edge \
+              freetype@edge \
+              ttf-freefont@edge<<^parameters.debug>> \
+              > /dev/null 2>&1<</parameters.debug>>
+
+            rm -rf /var/cache/*
+            mkdir /var/cache/apk
+
+            # test/verify installation
+            if chromium-browser --version<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              echo "$(chromium-browser --version)has been installed to $(which chromium-browser)"
+              exit 0
+            else
+              echo "Something went wrong; Chromium could not be installed"
+              exit 1
+            fi
+          elif command -v yum<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            # download chrome
+            curl --silent --show-error --location --fail --retry 3 \
+              --output google-chrome-stable_current_x86_64.rpm \
+              https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm
+
+            curl --silent --show-error --location --fail --retry 3 \
+              --output liberation-fonts.rpm \
+              http://mirror.centos.org/centos/7/os/x86_64/Packages/liberation-fonts-1.07.2-16.el7.noarch.rpm
+
+            $SUDO yum localinstall -y liberation-fonts.rpm<<^parameters.debug>> \
+              > /dev/null 2>&1<</parameters.debug>>
+
+            $SUDO yum localinstall -y google-chrome-stable_current_x86_64.rpm<<^parameters.debug>> \
+              > /dev/null 2>&1<</parameters.debug>>
+
+            rm -rf google-chrome-stable_current_x86_64.rpm liberation-fonts.rpm
+          else
+            # download chrome
+            curl --silent --show-error --location --fail --retry 3 \
+              --output google-chrome-stable_current_amd64.deb \
+              https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+
+            $SUDO apt-get update<<^parameters.debug>> \
+            > /dev/null 2>&1<</parameters.debug>> && \
+            $SUDO apt-get install -y \
+              apt-utils \
+              fonts-liberation \
+              libappindicator3-1 \
+              libasound2 \
+              libatk-bridge2.0-0 \
+              libatk1.0-0 \
+              libatspi2.0-0 \
+              libcairo2 \
+              libcups2 \
+              libdbus-1-3 \
+              libgdk-pixbuf2.0-0 \
+              libglib2.0-0 \
+              libgtk-3-0 \
+              libnspr4 \
+              libnss3 \
+              libpango-1.0-0 \
+              libpangocairo-1.0-0 \
+              libxcomposite1 \
+              libxcursor1 \
+              libxi6 \
+              libxrandr2 \
+              libxrender1 \
+              libxss1 \
+              libxtst6 \
+              lsb-release \
+              xdg-utils<<^parameters.debug>> \
+              > /dev/null 2>&1<</parameters.debug>>
+
+            # setup chrome installation
+            $SUDO dpkg -i \
+              google-chrome-stable_current_amd64.deb<<^parameters.debug>> \
+              > /dev/null 2>&1<</parameters.debug>>
+
+            rm -rf google-chrome-stable_current_amd64.deb
+          fi
+
+          # test/verify installation
+          if google-chrome --version<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            echo "$(google-chrome --version) has been installed to $(which google-chrome)"
+          else
+            echo "Something went wrong; Google Chrome could not be installed"
+            exit 1
+          fi
+        name: Install Google Chrome
+  install-chromedriver:
+    description: |
+      Install Google's ChromeDriver WebDriver proxy, for use in browser testing with Chrome. A ChromeDriver version will be dynamically selected based on the installed version of Chrome; for details, see https://sites.google.com/a/chromium.org/chromedriver/downloads/version-selection Requirements: sed, curl, unzip
+    parameters:
+      debug:
+        default: false
+        description: |
+          Extra output for orb developers
+        type: boolean
+      install-dir:
+        default: /usr/local/bin
+        description: |
+          Directory in which to install ChromeDriver (directory selection not supported on Alpine Linux)
+        type: string
+    steps:
+    - run:
+        command: |
+          if [[ $EUID == 0 ]]; then export SUDO=""; else export SUDO="sudo"; fi
+
+          # determine_chrome_version
+          if uname -a | grep Darwin<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            CHROME_VERSION="$(/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --version)"
+            PLATFORM=mac64
+
+          elif cat /etc/issue | grep Alpine<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            apk update<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>> && \
+              apk add --no-cache chromium-chromedriver > /dev/null
+
+            # verify version
+            echo "$(chromedriver --version) has been installed to $(which chromedriver)"
+
+            exit 0
+          else
+            CHROME_VERSION="$(google-chrome --version)"
+            PLATFORM=linux64
+          fi
+
+          CHROME_VERSION_STRING="$(echo $CHROME_VERSION | sed 's/^Google Chrome //' | sed 's/^Chromium //')"
+
+          # print Chrome version
+          echo "Installed version of Google Chrome is $CHROME_VERSION_STRING"
+
+          # determine chromedriver release
+          CHROMEDRIVER_RELEASE="${CHROME_VERSION_STRING%%.*}"
+
+          let CHROME_RELEASE=$CHROMEDRIVER_RELEASE
+
+          if [[ $CHROME_RELEASE -lt 70 ]]; then
+            # https://sites.google.com/a/chromium.org/chromedriver/downloads
+            # https://chromedriver.storage.googleapis.com/2.40/notes.txt
+
+            case $CHROME_RELEASE in
+            69)
+              CHROMEDRIVER_VERSION="2.44";;
+            68)
+              CHROMEDRIVER_VERSION="2.42";;
+            67)
+              CHROMEDRIVER_VERSION="2.41";;
+            66)
+              CHROMEDRIVER_VERSION="2.40";;
+            65)
+              CHROMEDRIVER_VERSION="2.38";;
+            64)
+              CHROMEDRIVER_VERSION="2.37";;
+            63)
+              CHROMEDRIVER_VERSION="2.36";;
+            62)
+              CHROMEDRIVER_VERSION="2.35";;
+            61)
+              CHROMEDRIVER_VERSION="2.34";;
+            60)
+              CHROMEDRIVER_VERSION="2.33";;
+            59)
+              CHROMEDRIVER_VERSION="2.32";;
+            58)
+              CHROMEDRIVER_VERSION="2.31";;
+            [56-57])
+              CHROMEDRIVER_VERSION="2.29";;
+            55)
+              CHROMEDRIVER_VERSION="2.28";;
+            54)
+              CHROMEDRIVER_VERSION="2.27";;
+            53)
+              CHROMEDRIVER_VERSION="2.26";;
+            52)
+              CHROMEDRIVER_VERSION="2.24";;
+            51)
+              CHROMEDRIVER_VERSION="2.23";;
+            [49-50])
+              CHROMEDRIVER_VERSION="2.22";;
+            [46-48])
+              CHROMEDRIVER_VERSION="2.21";;
+            [43-45])
+              CHROMEDRIVER_VERSION="2.20";;
+            *)
+              echo "Sorry, Google Chrome/Chromium version 43 or newer is required to use ChromeDriver"
+              exit 1;;
+            esac
+          else
+            CHROMEDRIVER_VERSION=$(curl --silent --show-error --location --fail --retry 3 \
+              "https://chromedriver.storage.googleapis.com/LATEST_RELEASE_$CHROMEDRIVER_RELEASE")
+          fi
+
+          # installation check
+          if command -v chromedriver<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            if chromedriver --version | grep "$CHROMEDRIVER_VERSION"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              echo "ChromeDriver $CHROMEDRIVER_VERSION is already installed"
+              exit 0
+            else
+              echo "A different version of ChromeDriver is installed ($(chromedriver --version)); removing it"
+              $SUDO rm -f $(command -v chromedriver)
+            fi
+          fi
+
+          echo "ChromeDriver $CHROMEDRIVER_VERSION will be installed"
+
+          # download chromedriver
+          curl --silent --show-error --location --fail --retry 3 \
+            --output chromedriver_$PLATFORM.zip \
+            "http://chromedriver.storage.googleapis.com/$CHROMEDRIVER_VERSION/chromedriver_$PLATFORM.zip"
+
+          # setup chromedriver installation
+          if command -v yum<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            yum install -y unzip<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+          fi
+
+          unzip "chromedriver_$PLATFORM.zip"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+          rm -rf "chromedriver_$PLATFORM.zip"
+
+          $SUDO mv chromedriver <<parameters.install-dir>>
+          $SUDO chmod +x <<parameters.install-dir>>/chromedriver
+
+          # test/verify version
+          if chromedriver --version | grep "$CHROMEDRIVER_VERSION"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            echo "$(chromedriver --version) has been installed to $(which chromedriver)"
+          else
+            echo "Something went wrong; ChromeDriver could not be installed"
+            exit 1
+          fi
+        name: Install ChromeDriver
+  install-firefox:
+    description: |
+      Install Mozilla's Firefox browser, for use in browser testing. Requires apt-get, gpg, curl, sha256sum, tar, jq
+    parameters:
+      alpine-version:
+        default: stable
+        description: |
+          For Alpine Linux users, select a Firefox version: either the latest stable release, or the latest Extended Support Release. For more information, see https://mozilla.org/firefox/organizations and https://pkgs.alpinelinux.org/packages?name=firefox*
+        enum:
+        - stable
+        - esr
+        type: enum
+      debug:
+        default: false
+        description: |
+          Extra output for orb developers
+        type: boolean
+      install-dir:
+        default: /usr/local/bin
+        description: |
+          Directory in which to install Firefox
+        type: string
+      version:
+        default: latest
+        description: |
+          Version of Firefox to install, defaults to the latest stable release. To install an older release, specify a full semantic version number, e.g., 66.0.3, 53.0, etc. Note: version-selection is not supported for Alpine Linux-based execution environments, as Mozilla's Firefox binaries are not compiled to run on Alpine. Use the `alpine-version` parameter to select from a limited number of Alpine-based Firefox packages. Otherwise, for a full list of releases, see the following: https://archive.mozilla.org/pub/firefox/releases/
+        type: string
+    steps:
+    - run:
+        command: |
+          if [[ $EUID == 0 ]]; then export SUDO=""; else export SUDO="sudo"; fi
+
+          # FUNCTIONS
+          grab_firefox_version () {
+            if [[ <<parameters.version>> == "latest" ]]; then
+              # extract latest version from mozilla product details API
+
+              FIREFOX_VERSION_STRING=$(curl \
+                https://product-details.mozilla.org/1.0/firefox_versions.json | \
+                jq '.LATEST_FIREFOX_VERSION')
+
+              # strip leading/trailing "
+              temp="${FIREFOX_VERSION_STRING%\"}"
+              FIREFOX_VERSION="${temp#\"}"
+              echo "Latest stable version of Firefox is $FIREFOX_VERSION"
+            else
+              FIREFOX_VERSION=<<parameters.version>>
+              echo "Selected version of Firefox is $FIREFOX_VERSION"
+            fi
+
+            # create Firefox download URL base
+            FIREFOX_URL_BASE="https://archive.mozilla.org/pub/firefox/releases/$FIREFOX_VERSION"
+          }
+
+          installation_check () {
+            if command -v firefox<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              if firefox --version | grep "$FIREFOX_VERSION"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+                echo "firefox $FIREFOX_VERSION is already installed"
+                exit 0
+              else
+                echo "A different version of Firefox is installed ($(firefox --version)); removing it"
+                $SUDO rm -f $(command -v firefox)
+              fi
+            fi
+          }
+
+          # mac: setup version, install packages, then continue
+          if uname -a | grep Darwin<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            grab_firefox_version
+            installation_check
+
+            HOMEBREW_NO_AUTO_UPDATE=1 brew install gnupg coreutils<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+
+          # alpine: install everything, then check version & halt
+          elif cat /etc/issue | grep Alpine<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+
+            # https://stackoverflow.com/questions/51806403/installation-of-firefox-from-alpine-edge
+            # https://wiki.alpinelinux.org/wiki/Include:Upgrading_to_Edge
+
+            <<#parameters.debug>>echo "Old /etc/apk/repositories:"
+            cat /etc/apk/repositories<</parameters.debug>>
+
+            if ! command -v perl<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              apk add perl<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+            fi
+
+            perl -i -pe 's|v([0-9]+){0,1}(.[0-9]+){0,1}(.[0-9]+)|edge|g' \
+              /etc/apk/repositories
+
+            <<#parameters.debug>>echo "New /etc/apk/repositories:"
+            cat /etc/apk/repositories<</parameters.debug>>
+
+            <<#parameters.debug>>echo "Running apk upgrade..."<</parameters.debug>>
+            apk upgrade --update-cache --available<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+
+            <<#parameters.debug>>echo "Running apk add icu-libs..."<</parameters.debug>>
+            apk add icu-libs<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+
+            if [[ "<<parameters.alpine-version>>" == "stable" ]]; then
+              FIREFOX_VERSION=$(curl \
+                --silent --show-error --location --fail --retry 3 \
+                http://dl-cdn.alpinelinux.org/alpine/edge/testing/x86_64/ | grep firefox | \
+                sed -E 's%<a href="%%' | sed -E 's%.apk">firefox-.*.apk</a>.*%%' | \
+                sed -E 's/firefox-//' | sed -E 's/-.*//')
+
+              echo "Selected version of Firefox is: $FIREFOX_VERSION (Alpine APK)"
+
+              apk --no-cache add \
+                --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing \
+                firefox<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+
+            elif [[ "<<parameters.alpine-version>>" == "esr" ]]; then
+              FIREFOX_VERSION=$(curl \
+                --silent --show-error --location --fail --retry 3 \
+                http://dl-cdn.alpinelinux.org/alpine/edge/community/x86_64/ | grep firefox-esr | \
+                sed -E 's|.*="||' | sed -E 's|.apk".*||' | \
+                sed -E 's|firefox-esr-||' | sed -E 's|-.*||')
+
+              echo "Selected version of Firefox is: $FIREFOX_VERSION (Mozilla Extended Support Release, Alpine APK)"
+
+              apk --no-cache add \
+                --repository http://dl-cdn.alpinelinux.org/alpine/edge/community \
+                firefox-esr > /dev/null
+            fi
+
+            ln -s "$(which firefox)" <<parameters.install-dir>>/firefox
+
+            # test/verify version
+            if firefox --version | grep "$FIREFOX_VERSION"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              echo "$(firefox --version) has been installed to $(which firefox)"
+              exit 0
+            else
+              echo "Something went wrong; the specified version of Firefox could not be installed"
+              exit 1
+            fi
+
+          # deb/ubuntu/other linux: setup version, install packages, then continue
+          else
+            grab_firefox_version
+            installation_check
+
+            if command -v yum<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              $SUDO yum install -y \
+                bzip2 \
+                dbus-glib-devel \
+                gtk3-devel \
+                libXt-devel \
+                perl \
+                which \
+               <<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+            else
+              $SUDO apt-get update > /dev/null 2>&1 && \
+                $SUDO apt-get install -y libgtk-3-dev libdbus-glib-1-2<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+            fi
+          fi
+
+          # import public key
+          curl --silent --show-error --location --fail --retry 3 "$FIREFOX_URL_BASE/KEY" | gpg --import<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+
+          # download shasum256
+          curl -O --silent --show-error --location --fail --retry 3 "$FIREFOX_URL_BASE/SHA256SUMS.asc"
+          curl -O --silent --show-error --location --fail --retry 3 "$FIREFOX_URL_BASE/SHA256SUMS"
+
+          # verify shasum256
+          gpg --verify SHA256SUMS.asc SHA256SUMS
+          rm -f SHA256SUMS.asc
+
+          # setup firefox download
+          if uname -a | grep Darwin<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            FIREFOX_FILE="Firefox%20$FIREFOX_VERSION"
+            PLATFORM=mac
+            FILE_EXT=dmg
+          else
+            FIREFOX_FILE="firefox-$FIREFOX_VERSION"
+            PLATFORM=linux-x86_64
+            FILE_EXT=tar.bz2
+          fi
+
+          FIREFOX_FILE_LOCATION="$PLATFORM/en-US/$FIREFOX_FILE"
+
+          FIREFOX_FILE_NAME="$PLATFORM-en-US-$FIREFOX_FILE"
+
+          # download firefox
+          curl --silent --show-error --location --fail --retry 3 \
+            --output "$FIREFOX_FILE_NAME.$FILE_EXT" \
+            "$FIREFOX_URL_BASE/$FIREFOX_FILE_LOCATION.$FILE_EXT"
+
+          if uname -a | grep Darwin<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            echo "No PGP data for macOS Firefox releases; skipping PGP verification"
+
+            perl -i -pe "s&mac/en-US/Firefox $FIREFOX_VERSION&mac-en-US-Firefox%20$FIREFOX_VERSION&g" SHA256SUMS
+          else
+            # only do this step if .asc file exists for this version
+            if [[ $(curl --silent --location --fail --retry 3 \
+              "$FIREFOX_URL_BASE/$FIREFOX_FILE_LOCATION.$FILE_EXT.asc") ]]; then
+
+              curl --silent --show-error --location --fail --retry 3 \
+                --output "$FIREFOX_FILE_NAME.$FILE_EXT.asc" \
+                "$FIREFOX_URL_BASE/$FIREFOX_FILE_LOCATION.$FILE_EXT.asc"
+
+              # verify download archive
+              gpg --verify "$FIREFOX_FILE_NAME.$FILE_EXT.asc" "$FIREFOX_FILE_NAME.$FILE_EXT"
+              rm -f "$FIREFOX_FILE_NAME.$FILE_EXT.asc"
+            fi
+
+            perl -i -pe "s%linux-x86_64/en-US/firefox%linux-x86_64-en-US-firefox%g" SHA256SUMS
+          fi
+
+          grep "$FIREFOX_FILE_NAME.$FILE_EXT" SHA256SUMS | sha256sum -c -
+          rm -f SHA256SUMS
+
+          # setup firefox installation
+          if uname -a | grep Darwin<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            hdiutil attach "$FIREFOX_FILE_NAME.$FILE_EXT"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+            $SUDO cp -R /Volumes/Firefox/Firefox.app /Applications
+
+            hdiutil eject /Volumes/Firefox<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>
+            $SUDO rm -f "$FIREFOX_FILE_NAME.$FILE_EXT"
+
+            echo -e "#\!/bin/bash\n" > firefox
+            perl -i -pe "s|#\\\|#|g" firefox
+            echo -e "/Applications/Firefox.app/Contents/MacOS/firefox \"\$@\"" >> firefox
+
+            $SUDO mv firefox <<parameters.install-dir>>
+            $SUDO chmod +x <<parameters.install-dir>>/firefox
+
+            # test/verify version
+            if firefox --version | grep "$FIREFOX_VERSION"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              echo "$(firefox --version) has been installed in the /Applications directory"
+              echo "A shortcut has also been created at $(which firefox)"
+            else
+              echo "Something went wrong; the specified version of Firefox could not be installed"
+              exit 1
+            fi
+
+          else
+            $SUDO tar -xjf "$FIREFOX_FILE_NAME.$FILE_EXT"
+            $SUDO rm -f "$FIREFOX_FILE_NAME.$FILE_EXT"
+            $SUDO mv firefox "<<parameters.install-dir>>/firefox-$FIREFOX_VERSION"
+            $SUDO chmod +x "<<parameters.install-dir>>/firefox-$FIREFOX_VERSION/firefox"
+            $SUDO ln -s "<<parameters.install-dir>>/firefox-$FIREFOX_VERSION/firefox" /usr/local/bin/firefox
+
+            # test/verify version
+            if firefox --version | grep "$FIREFOX_VERSION"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+              echo "$(firefox --version) has been installed to $(which firefox)"
+            else
+              echo "Something went wrong; the specified version of Firefox could not be installed"
+              exit 1
+            fi
+          fi
+        name: Install Firefox
+  install-geckodriver:
+    description: |
+      Install Mozilla's Geckodriver WebDriver proxy, for use in browser testing with Firefox. Requirements: curl, tar
+    parameters:
+      debug:
+        default: false
+        description: |
+          Extra output for orb developers
+        type: boolean
+      install-dir:
+        default: /usr/local/bin
+        description: |
+          Directory in which to install Geckodriver
+        type: string
+      version:
+        default: latest
+        description: |
+          Version of Geckodriver to install, defaults to latest release. To install an older release, specify a full semantic version tag, e.g., `v0.23.0`. For a list of releases, and a Firefox/Geckodriver version compatibility table, see the following links: https://github.com/mozilla/geckodriver/releases https://firefox-source-docs.mozilla.org/testing/geckodriver/Support.html
+        type: string
+    steps:
+    - run:
+        command: |
+          if [[ $EUID == 0 ]]; then export SUDO=""; else export SUDO="sudo"; fi
+
+          # FUNCTIONS
+          grab_geckodriver_version () {
+            if [[ <<parameters.version>> == "latest" ]]; then
+              # extract latest version from github releases API
+              GECKODRIVER_VERSION_STRING=$(curl \
+                https://api.github.com/repos/mozilla/geckodriver/releases/latest | jq '.tag_name')
+
+              # strip leading/trailing "
+              temp="${GECKODRIVER_VERSION_STRING%\"}"
+              GECKODRIVER_VERSION="${temp#\"}"
+            else
+              GECKODRIVER_VERSION=<<parameters.version>>
+            fi
+
+            echo "Selected version of Geckodriver is: $GECKODRIVER_VERSION"
+          }
+
+          installation_check () {
+            if command -v geckodriver >> /dev/null 2>&1; then
+              if geckodriver --version | grep "$GECKODRIVER_VERSION" >> /dev/null 2>&1; then
+                echo "Geckodriver $GECKODRIVER_VERSION is already installed"
+                exit 0
+              else
+                echo "A different version of Geckodriver is installed ($(geckodriver --version)); removing it"
+                $SUDO rm -f $(command -v geckodriver)
+              fi
+            else
+              echo "Geckodriver is not currently installed; installing it"
+            fi
+          }
+
+          grab_geckodriver_version
+          installation_check
+
+          if uname -a | grep Darwin >> /dev/null 2>&1; then
+            PLATFORM=macos
+          else
+            PLATFORM=linux64
+          fi
+
+          # get download URL
+          GECKODRIVER_URL=$(curl \
+            --silent --show-error --location --fail --retry 3 \
+            "https://api.github.com/repos/mozilla/geckodriver/releases/tags/$GECKODRIVER_VERSION" | \
+            jq -r ".assets[] | select(.name | test(\"$PLATFORM\")) | .browser_download_url")
+
+          # download geckodriver
+          curl --silent --show-error --location --fail --retry 3 \
+            --output "geckodriver-$GECKODRIVER_VERSION-$PLATFORM.tar.gz" \
+            "$GECKODRIVER_URL"
+
+          # setup geckodriver installation
+          tar xf "geckodriver-$GECKODRIVER_VERSION-$PLATFORM.tar.gz"
+          rm -rf "geckodriver-$GECKODRIVER_VERSION-$PLATFORM.tar.gz"
+
+          $SUDO mv geckodriver <<parameters.install-dir>>
+          $SUDO chmod +x <<parameters.install-dir>>/geckodriver
+
+          # verify version
+          echo "Geckodriver has been installed to $(which geckodriver)"
+          geckodriver --version
+
+          # test/verify version
+
+          GECKODRIVER_VERSION_NUM="$(echo $GECKODRIVER_VERSION | sed -E 's/v//')"
+
+          if geckodriver --version | grep "$GECKODRIVER_VERSION_NUM"<<^parameters.debug>> > /dev/null 2>&1<</parameters.debug>>; then
+            echo "$(geckodriver --version) has been installed to $(which geckodriver)"
+          else
+            echo "Something went wrong; the specified version of Geckodriver could not be installed"
+            exit 1
+          fi
+        name: Install Geckodriver
+description: |
+  Install a variety of tools for browser testing. View this orb's source: https://github.com/CircleCI-Public/browser-tools-orb
 version: 2.1
 orbs:
   maven: circleci/maven@0.0.11
